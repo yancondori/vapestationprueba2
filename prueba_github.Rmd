@@ -1,0 +1,211 @@
+---
+title: "Prueba Reporte comercial Vape Station"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: columns
+
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(ggrepel)
+library(extrafont)
+library(kableExtra)
+library(ggthemes)
+library(flexdashboard)
+library(formattable)
+library(blogdown)
+#library(ggsci)
+#library(Cairo)
+#library(rmdformats)
+#library(tinytex)
+#library(captioner)
+#library(DT)
+#library(plotly)
+#library(prettydoc)
+options(pillar.sigfig = 8)
+```
+
+```{r base-datos-producto,echo=F,warning=F,message=F}
+
+setwd("C:/Users/Yan/Documents/2020/Programming Projects/Station/Analisis_R/data-raw")
+sales<-
+  read_csv("reporte_ventas(2018-2020).csv",
+          col_types = list(fecha_venta=col_date(),fecha_uso=col_date()),guess_max = 80001) %>%
+  select(fecha_uso,hora_venta,total,sede,categoria,tipo_documento,estado,
+          nombre,producto_sku,cantidad,valorvariante4,valorvariante5,valorvariante6,marca)%>%
+  #filter(doc!="Boleta Manual") %>%
+  rename(fecha=fecha_uso,hora=hora_venta,catg=categoria,sku=producto_sku,doc=tipo_documento,qty=cantidad,
+          vv4=valorvariante4,vv5=valorvariante5,vv6=valorvariante6)
+
+sales_anual<-
+  sales %>%
+  filter(between(fecha,as.Date("2019-03-01"),as.Date("2020-03-30")))
+
+```
+
+# Mercado_Nicho {.tabset data-icon="fa-chart-line" data-navmenu="Mercado_Nicho"}
+
+## Column 1 Mercado_Nicho  {.tabset data-width=900}
+
+### Evolucion Mercado_Nicho {}
+```{r,echo=F,fig.dim=c(15,8),fig.align="center",collapse=F,message=F}
+
+ventas_nicho_var<- #create a df for MoM and YoY without date filter
+  sales %>%
+  group_by(vv4,mes=floor_date(fecha,"1 month")) %>%
+  summarise(total=sum(total),qty=sum(qty),pu=total/qty) %>%
+  arrange(desc(vv4),.by_group=TRUE) %>%
+  mutate(MoM=(total/lag(total)-1),YoY=(total/lag(total,12)-1)) %>%
+  mutate(MoM_qty=(qty/lag(qty)-1),YoY_qty=(qty/lag(qty,12)-1))
+
+ventas_nicho_sh<- #create a df for sh without date filter
+  sales %>%
+  group_by(mes=floor_date(fecha,"1 month"),vv4) %>%
+  summarise(total=sum(total)) %>%
+  arrange(desc(vv4),.by_group=TRUE) %>%
+  mutate(sh=total/sum(total))
+
+ventas_nicho<-ventas_nicho_sh %>% #df of join MoM,YoY,sh
+            left_join(ventas_nicho_var) %>%
+            #filter(between(mes,as.Date("2019-03-01"),as.Date("2020-03-30"))) %>%  #Set DATE filter
+            ungroup() %>% #ungroup for setting formats to columns
+            mutate(total=currency(total,symbol="S/.",digits=0),pu=currency(pu,symbol="S/.",digits=0))%>%
+            mutate(MoM=percent(MoM,digits=2),MoM=percent(MoM,digits=2),YoY=percent(YoY,digits=2)) %>%
+            mutate(sh=percent(sh,digits=2))
+
+sales%>%
+  group_by(mes=floor_date(fecha,"1 month"),vv4)%>%
+  summarise(total=currency(sum(total),symbol="S/.",digits = 0),qty=sum(qty)) %>%
+  top_n(5,total) %>%
+  ggplot(aes(mes, total/1000)) +
+  geom_line(aes(color=vv4,size=1.0),size=1.0)+
+  geom_point(aes(color=vv4,size=2.0),size=1.5)+
+  scale_color_tableau(limits=c("Otros","Smoker","Vape"))+
+  scale_y_continuous(breaks = seq(0, 500, by = 20))+
+  scale_x_date(NULL,date_breaks = "1 month",date_labels = "%b-%y")+
+  geom_text_repel(aes(label=round(total/1000,2)),size=3.0,vjust=0.9,hjust=0.5,
+                  position = position_dodge(width = .8),fontface="bold")+
+  labs(title="Evolucion de ventas por Mercado_Nicho (2019-2020)",x = "Mes",y="Ventas(Miles)",color="Mercado_Nicho",caption = " ")+
+  theme_light()+
+  theme(legend.position="bottom", legend.text=element_text(size=10,face="bold"),legend.spacing.x = unit(.5,"cm"),
+        plot.title=element_text(hjust =0.5,size=20,face="bold"),
+        axis.title.x = element_text(face="bold"),axis.title.y = element_text(face="bold"),
+        axis.text.x = element_text(face="bold"),axis.text.y = element_text(face="bold"),
+        plot.caption = element_text(hjust = 0, face = "italic",size=8.5))
+
+```
+
+### %Share Mercado_Nicho {}
+```{r,echo=F,fig.dim=c(15,8),fig.align="center"}
+
+ventas_nicho %>%
+  group_by(mes) %>%
+  top_n(5,total) %>%
+  ggplot(aes(mes,sh,fill=fct_reorder2(vv4,mes,-sh)))+
+  geom_bar(stat="identity",position="dodge",color="black")+
+  scale_fill_tableau(limits=c("Otros","Smoker","Vape"))+
+  #  scale_fill_discrete(limits=c("Otros","Smoker","Vape"))+
+  scale_y_continuous(labels = scales::percent_format(1),breaks = seq(-1,1, by = .1))+
+  scale_x_date(date_breaks = "month",date_labels = "%b-%y")+
+  geom_text(aes(label=percent(sh,0)),position = position_dodge(width=30),vjust=-0.25,fontface="bold",size=3.0)+
+  labs(title="Share(%) de ventas mensual por Mercado_Nicho",x ="Mes",y ="Share (%)",fill="Mercado_Nicho")+
+  theme_light()+
+  theme(legend.position="bottom",legend.text=element_text(size=10,face="bold"),legend.spacing.x = unit(.5,"cm"),
+        plot.title=element_text(hjust =0.5,size=20,face="bold"),
+        axis.title.x = element_text(face="bold"),axis.title.y = element_text(face="bold"),
+        axis.text.x = element_text(face="bold"),axis.text.y = element_text(face="bold"),
+        legend.title = element_text(size=12))
+
+```
+
+### %MoM Mercado_Nicho {}
+```{r,echo=F ,fig.dim=c(15,8),fig.align="center"}
+
+ventas_nicho %>%
+  group_by(mes) %>%
+  top_n(5,total) %>%
+  ggplot(aes(mes,MoM,fill=fct_reorder2(vv4,mes,-MoM)))+
+  geom_bar(stat="identity",position="dodge",color="black")+
+  facet_grid(vv4~.,scales="free")+
+  scale_fill_tableau(limits=c("Otros","Smoker","Vape"))+
+  scale_y_continuous(labels = scales::percent_format(1))+
+  scale_x_date(date_breaks = "month",date_labels = "%b-%y")+
+  geom_text(aes(label=percent(MoM,0),vjust=if_else(MoM>=0,0,1)),position = position_dodge(width=30),fontface="bold",size=3.0)+
+  labs(title="Variacion mensual MoM (%) de ventas por Mercado_Nicho",x = "Mes",y = "Var (%)",fill="Mercado_Nicho")+
+  theme_light()+
+  theme(legend.position="none",legend.text=element_text(size=10,face="bold"),legend.spacing.x = unit(.5,"cm"),
+        plot.title=element_text(hjust =0.5,size=20,face="bold"),
+        axis.title.x = element_text(face="bold"),axis.title.y = element_text(face="bold"),
+        axis.text.x = element_text(face="bold"),axis.text.y = element_text(face="bold"),
+        strip.text.y = element_text(size = 12, color = "red", face = "bold"))
+
+```
+
+### %YoY Mercado_Nicho {}
+```{r,echo=F,fig.dim=c(15,8),fig.align="center"}
+
+ventas_nicho %>%
+  group_by(mes) %>%
+  top_n(5,total) %>%
+  na.omit() %>%
+  ggplot(aes(mes,YoY,fill=fct_reorder2(vv4,mes,-YoY)))+
+  geom_bar(stat="identity",position="dodge",color="black")+
+  facet_grid(vv4~.,scales="free")+
+  scale_fill_tableau(limits=c("Otros","Smoker","Vape"))+
+  scale_y_continuous(labels = scales::percent_format(1))+
+  scale_x_date(date_breaks = "month",date_labels = "%b-%y")+
+  geom_text(aes(label=percent(YoY,0),vjust=if_else(YoY>=0,0,1)),position = position_dodge(width=30),fontface="bold",size=3.0)+
+  labs(title="Variacion anual YoY (%) de ventas mensual por Mercado_Nicho",x = "Mes",y = "Var (%)",fill="Mercado_Nicho")+
+  theme_light()+
+  theme(legend.position="none",legend.text=element_text(size=10,face="bold"),legend.spacing.x = unit(.5,"cm"),
+        plot.title=element_text(hjust =0.5,size=20,face="bold"),
+        axis.title.x = element_text(face="bold"),axis.title.y = element_text(face="bold"),
+        axis.text.x = element_text(face="bold"),axis.text.y = element_text(face="bold"),
+        strip.text.y = element_text(size = 12, color = "red", face = "bold"))
+
+```
+
+## Column 2 Mercado_Nicho {data-width=350}
+
+### Tabla ventas Mercado_Nicho Top-5 {}
+```{r,echo=F,warning=F}
+#output table
+ventas_nicho<-ventas_nicho_sh %>% #df of join MoM,YoY,sh
+            left_join(ventas_nicho_var) %>%
+            #filter(between(mes,as.Date("2019-03-01"),as.Date("2020-03-30"))) %>%  #Set DATE filter
+            ungroup() %>% #ungroup for setting formats to columns and arrange table/tibble
+            arrange(mes,-total,vv4) %>%
+            mutate(mes=format(mes,"%b-%y"))%>%
+            mutate(total=currency(total,symbol="S/.",digits=0),pu=currency(pu,symbol="S/.",digits=0))%>%
+            mutate(MoM=percent(MoM,digits=2),MoM=percent(MoM,digits=2),YoY=percent(YoY,digits=2)) %>%
+            mutate(sh=percent(sh,digits=2))
+
+ventas_nicho %>%
+  group_by(mes) %>%
+  mutate(MoM=cell_spec(MoM,"html",color=ifelse(is.na(MoM),"#D9D9D9",ifelse(!is.na(MoM)&MoM>0,"#4E79A7","#E15759"))),
+         YoY=cell_spec(YoY,"html",color=ifelse(is.na(YoY),"#D9D9D9",ifelse(!is.na(YoY)&YoY>0,"#4E79A7","#E15759")))) %>%
+  select(mes,vv4,total,sh,qty,pu,MoM,YoY) %>% #select df MoM,YoY. No MoM_qty,YoY_qty
+  rename(Mes=mes,Mercado_Nicho=vv4,Ventas_igv=total,Share=sh,Cantidad=qty,Precio=pu) %>%
+  top_n(5,Ventas_igv) %>%
+  kable(booktabs = T, linesep = "",format="html",escape=F,align = "c",
+        caption="",format.args = list(decimal.mark = '.', big.mark = ","))%>%
+  kable_styling(bootstrap_options = "striped",font_size = 11) %>%
+  #column_spec(c(1,2),bold = T,width = "2cm") %>%
+  column_spec(c(1,2,3,4,7,8),bold = T) %>%
+  #column_spec(c(5,6),bold = F,width = "2cm") %>%
+  row_spec(0,  bold = T)
+
+ventas_nicho_xp<-
+  ventas_nicho_sh %>% #df of join MoM,YoY,sh
+  left_join(ventas_nicho_var) %>%
+  #filter(between(mes,as.Date("2019-03-01"),as.Date("2020-03-30"))) %>%  #Set DATE filter
+  arrange(mes,-total,vv4) %>%
+  select(mes,vv4,total,sh,qty,pu,MoM,YoY,MoM_qty,YoY_qty) %>%
+  rename(Mes=mes,Mercado_Nicho=vv4,Ventas_igv=total,Share=sh,Cantidad=qty,Precio=pu)
+
+setwd("C:/Users/Yan/Documents/2020/Programming Projects/Station/Analisis_R/data-output/total")
+write.csv(ventas_nicho_xp,file = "C:/Users/Yan/Documents/2020/Programming Projects/Station/Analisis_R/data-output/total/ventas_nicho_xp.csv")
+
+```
